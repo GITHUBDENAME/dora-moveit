@@ -341,9 +341,9 @@ def main():
                         pa.array(solution, type=pa.float32()),
                         metadata={"encoding": "jointstate", "success": True}
                     )
-                    print(f"[IK] ✅ Solution found, error={status['error']:.6f}")
+                    print(f"[IK] SUCCESS: Solution found, error={status['error']:.6f}")
                 else:
-                    print(f"[IK] ❌ Failed: {status['message']}")
+                    print(f"[IK] FAILED: {status['message']}")
                     
         elif event_type == "STOP":
             print("IK operator stopping...")

@@ -82,7 +82,7 @@ class MotionCommander:
             
         elif self.state == "planning":
             if self.pose_idx >= len(self.poses):
-                print("\n[Commander] ✅ Demo sequence complete! Restarting...")
+                print("\n[Commander] Demo sequence complete! Restarting...")
                 self.pose_idx = 0
                 return False
             
@@ -109,10 +109,10 @@ class MotionCommander:
         self.waiting_for_plan = False
         
         if status.get("success"):
-            print(f"[Commander] ✅ Plan succeeded: {status.get('num_waypoints', 0)} waypoints")
+            print(f"[Commander] Plan succeeded: {status.get('num_waypoints', 0)} waypoints")
             self.waiting_for_execution = True
         else:
-            print(f"[Commander] ❌ Plan failed: {status.get('message', 'Unknown')}")
+            print(f"[Commander] Plan failed: {status.get('message', 'Unknown')}")
             # Skip to next pose
             self.pose_idx += 1
             
@@ -181,9 +181,9 @@ def main():
                         status_bytes = bytes(value)
                     status = json.loads(status_bytes.decode('utf-8'))
                     if status.get("success"):
-                        print(f"[Commander] IK: ✅ error={status.get('error', 0):.6f}")
+                        print(f"[Commander] IK: OK error={status.get('error', 0):.6f}")
                     else:
-                        print(f"[Commander] IK: ❌ {status.get('message', '')}")
+                        print(f"[Commander] IK: FAILED {status.get('message', '')}")
                 except:
                     pass
                     

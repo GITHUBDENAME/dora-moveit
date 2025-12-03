@@ -521,33 +521,53 @@ class PlannerOperator:
         }
         
         if result.success:
-            print(f"  ✅ Success! {len(result.trajectory)} waypoints, {result.planning_time:.3f}s")
+            print(f"  SUCCESS: {len(result.trajectory)} waypoints, {result.planning_time:.3f}s")
         else:
-            print(f"  ❌ Failed: {result.message}")
+            print(f"  FAILED: {result.message}")
         
         return result.trajectory, status
     
     def process_scene_update(self, update_data: dict):
-        """Process scene update"""
+        """
+        Process scene update.
+
+        Args:
+            update_data: Dictionary with scene update. Can be:
+                - Single object update: {"action": "add/remove/clear", "object": {...}}
+                - Full scene broadcast: {"world_objects": [...], "attached_objects": [...]}
+        """
+        # Check if this is a full scene broadcast from planning_scene_op
+        if "world_objects" in update_data:
+            # Full scene sync - clear and rebuild
+            self.planner.clear_obstacles()
+            for obj_data in update_data.get("world_objects", []):
+                self._add_obstacle_from_data(obj_data)
+            return
+
+        # Otherwise handle as single object command
         action = update_data.get("action", "add")
-        
+
         if action == "add":
-            obj_data = update_data["object"]
-            if obj_data["type"] == "sphere":
-                obj = create_sphere(obj_data["name"], np.array(obj_data["position"]), obj_data["dimensions"][0])
-            elif obj_data["type"] == "box":
-                obj = create_box(obj_data["name"], np.array(obj_data["position"]), np.array(obj_data["dimensions"]))
-            else:
-                obj = create_cylinder(obj_data["name"], np.array(obj_data["position"]), 
-                                      obj_data["dimensions"][0], obj_data["dimensions"][1])
-            self.planner.add_obstacle(obj)
-            print(f"[Planner] Added obstacle: {obj_data['name']}")
+            if "object" in update_data:
+                self._add_obstacle_from_data(update_data["object"])
         elif action == "remove":
             self.planner.collision_checker.remove_environment_object(update_data["name"])
             print(f"[Planner] Removed obstacle: {update_data['name']}")
         elif action == "clear":
             self.planner.clear_obstacles()
             print("[Planner] Cleared all obstacles")
+
+    def _add_obstacle_from_data(self, obj_data: dict):
+        """Helper to add an obstacle from object data dictionary"""
+        if obj_data["type"] == "sphere":
+            obj = create_sphere(obj_data["name"], np.array(obj_data["position"]), obj_data["dimensions"][0])
+        elif obj_data["type"] == "box":
+            obj = create_box(obj_data["name"], np.array(obj_data["position"]), np.array(obj_data["dimensions"]))
+        else:
+            obj = create_cylinder(obj_data["name"], np.array(obj_data["position"]),
+                                  obj_data["dimensions"][0], obj_data["dimensions"][1])
+        self.planner.add_obstacle(obj)
+        print(f"[Planner] Added obstacle: {obj_data['name']}")
 
 
 def main():

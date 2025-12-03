@@ -267,18 +267,27 @@ class CollisionCheckOperator:
     
     def process_scene_update(self, update_data: dict):
         """
-        Process a scene update command.
-        
+        Process a scene update.
+
         Args:
-            update_data: Dictionary with update command:
-                - action: "add", "remove", "clear"
-                - object: Object data (for add)
-                - name: Object name (for remove)
+            update_data: Dictionary with scene update. Can be:
+                - Single object update: {"action": "add/remove/clear", "object": {...}}
+                - Full scene broadcast: {"world_objects": [...], "attached_objects": [...]}
         """
+        # Check if this is a full scene broadcast from planning_scene_op
+        if "world_objects" in update_data:
+            # Full scene sync - clear and rebuild
+            self.clear_environment()
+            for obj_data in update_data.get("world_objects", []):
+                self.add_environment_object(obj_data)
+            return
+
+        # Otherwise handle as single object command
         action = update_data.get("action", "add")
-        
+
         if action == "add":
-            self.add_environment_object(update_data["object"])
+            if "object" in update_data:
+                self.add_environment_object(update_data["object"])
         elif action == "remove":
             self.remove_environment_object(update_data["name"])
         elif action == "clear":
@@ -344,7 +353,7 @@ def main():
                         metadata={"in_collision": result["in_collision"]}
                     )
                     
-                    status = "❌ COLLISION" if result["in_collision"] else "✅ clear"
+                    status = "COLLISION" if result["in_collision"] else "CLEAR"
                     print(f"[Check #{result['check_id']}] {status}", end="")
                     if "min_distance" in result:
                         print(f" (dist={result['min_distance']:.4f}m)")

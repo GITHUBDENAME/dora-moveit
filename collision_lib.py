@@ -605,5 +605,5 @@ if __name__ == "__main__":
     min_dist = checker.get_minimum_distance(link_transforms)
     print(f"Minimum distance to obstacles: {min_dist:.4f}m")
     
-    print("\n✅ Collision library ready for use!")
+    print("\n[OK] Collision library ready for use!")
 

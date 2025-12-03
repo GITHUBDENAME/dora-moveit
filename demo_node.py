@@ -182,11 +182,11 @@ class DemoNode:
             
         elif step_name == "complete":
             if self.tick_count % 5 == 0:
-                print("\n✅ Demo complete! All Dora-MoveIt components tested.")
-                print("   - Planning Scene: ✓")
-                print("   - IK Solver: ✓")
-                print("   - OMPL Planner: ✓")
-                print("   - Collision Checker: ✓")
+                print("\n[OK] Demo complete! All Dora-MoveIt components tested.")
+                print("   - Planning Scene: OK")
+                print("   - IK Solver: OK")
+                print("   - OMPL Planner: OK")
+                print("   - Collision Checker: OK")
                 print("\nPress Ctrl+C to stop.")
     
     def process_trajectory(self, trajectory_flat: np.ndarray, num_waypoints: int):
@@ -200,25 +200,25 @@ class DemoNode:
     def process_plan_status(self, status: dict):
         """Process planning result"""
         if status.get("success"):
-            print(f"  ✅ Planning succeeded in {status.get('planning_time', 0):.3f}s")
+            print(f"  [OK] Planning succeeded in {status.get('planning_time', 0):.3f}s")
         else:
-            print(f"  ❌ Planning failed: {status.get('message', 'Unknown error')}")
+            print(f"  [FAIL] Planning failed: {status.get('message', 'Unknown error')}")
     
     def process_ik_status(self, status: dict):
         """Process IK result"""
         if status.get("success"):
-            print(f"  ✅ IK succeeded with error {status.get('error', 0):.6f}")
+            print(f"  [OK] IK succeeded with error {status.get('error', 0):.6f}")
         else:
-            print(f"  ❌ IK failed: {status.get('message', 'Unknown error')}")
+            print(f"  [FAIL] IK failed: {status.get('message', 'Unknown error')}")
     
     def process_collision_result(self, result: dict):
         """Process collision check result"""
         if result.get("in_collision"):
             info = result.get("collision_info", {})
-            print(f"  ❌ Collision detected: {info.get('object_a', '?')} ↔ {info.get('object_b', '?')}")
+            print(f"  [COLLISION] Detected: {info.get('object_a', '?')} <-> {info.get('object_b', '?')}")
         else:
             dist = result.get("min_distance", 0)
-            print(f"  ✅ No collision (min distance: {dist:.4f}m)")
+            print(f"  [CLEAR] No collision (min distance: {dist:.4f}m)")
 
 
 def main():
