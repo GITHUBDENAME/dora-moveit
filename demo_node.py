@@ -55,10 +55,10 @@ class DemoNode:
         self.state = DemoState()
         
         # Initial robot configuration
-        self.state.current_joints = np.array([0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785])
+        self.state.current_joints = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         
         # Demo configurations
-        self.home_config = np.array([0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785])
+        self.home_config = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         self.pick_config = np.array([0.0, 0.2, 0.0, -1.5, 0.0, 1.7, 0.785])
         self.place_config = np.array([1.57, 0.2, 0.0, -1.5, 0.0, 1.7, 0.785])
         
@@ -129,7 +129,7 @@ class DemoNode:
             
         elif step_name == "request_ik":
             # Request IK for a target pose
-            target_pose = np.array([0.5, 0.0, 0.5, 180.0, 0.0, 90.0])  # x,y,z,r,p,y
+            target_pose = np.array([0.3, 0.0, 0.3, 0.0, 0.0, 0.0])  # x,y,z,r,p,y
             node.send_output(
                 "ik_request",
                 pa.array(target_pose, type=pa.float32())

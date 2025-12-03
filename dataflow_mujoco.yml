@@ -9,7 +9,7 @@ nodes:
   # MuJoCo Simulator (Panda Robot)
   # ===========================================
   - id: mujoco_sim
-    build: pip install -e ../../../node-hub/dora-mujoco
+    build: pip install -e ../dora-mujoco
     path: dora-mujoco
     inputs:
       tick: dora/timer/millis/10  # 100 Hz simulation

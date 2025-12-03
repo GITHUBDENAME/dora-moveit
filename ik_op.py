@@ -65,9 +65,9 @@ class NumericalIKSolver:
             num_joints: Number of robot joints
         """
         self.num_joints = num_joints
-        self.max_iterations = 100
-        self.position_tolerance = 1e-4
-        self.orientation_tolerance = 1e-3
+        self.max_iterations = 300
+        self.position_tolerance = 5e-1
+        self.orientation_tolerance = 1e-1
         self.step_size = 0.1
         
         # Joint limits (Panda robot defaults)
