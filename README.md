@@ -64,7 +64,10 @@ Test with the Panda robot in MuJoCo simulator:
 
 ```bash
 # Install dora-mujoco node
-pip install -e ../../node-hub/dora-mujoco
+pip install -e ../dora-mujoco
+
+# Start dora daemon
+dora up
 
 # Run with MuJoCo
 dora build dataflow_mujoco.yml
@@ -82,6 +85,9 @@ dora start dataflow_mujoco.yml
 ### Option 2: Basic Demo (Terminal Only)
 
 ```bash
+# Start dora daemon
+dora up
+
 # Build and start the dataflow
 dora build dataflow.yml
 dora start dataflow.yml

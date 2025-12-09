@@ -43,6 +43,7 @@ from collision_lib import (
     create_cylinder,
     create_robot_link
 )
+from robot_config import GEN72Config
 
 
 class PlannerType(Enum):
@@ -84,32 +85,31 @@ class TreeNode:
 
 
 class SimpleFK:
-    """Simple forward kinematics for collision checking"""
-    
+    """Simple forward kinematics for GEN72"""
+
     def __init__(self, num_joints: int = 7):
         self.num_joints = num_joints
-        
+
     def compute_link_transforms(self, joint_positions: np.ndarray) -> Dict[str, np.ndarray]:
-        """Compute link positions from joint angles"""
+        """Compute link positions from joint angles (simplified)"""
         q = joint_positions
         transforms = {}
-        
+
+        # Simplified FK - approximate link positions
+        transforms["link0"] = np.array([0.0, 0.0, 0.109])  # base
+        transforms["link1"] = np.array([0.0, 0.0, 0.218])  # joint1 height
+
+        # Approximate positions based on joint angles
         c1, s1 = np.cos(q[0]), np.sin(q[0])
         c2, s2 = np.cos(q[1]), np.sin(q[1])
-        c4, s4 = np.cos(q[3]), np.sin(q[3])
-        c6, s6 = np.cos(q[5]), np.sin(q[5])
-        
-        l1, l2, l3 = 0.316, 0.384, 0.107
-        
-        transforms["link0"] = np.array([0.0, 0.0, 0.15])
-        transforms["link1"] = np.array([0.0, 0.0, 0.333])
-        transforms["link2"] = np.array([l1 * s2 * c1, l1 * s2 * s1, 0.333 + l1 * c2])
-        transforms["link3"] = transforms["link2"] + np.array([0.0825 * c1, 0.0825 * s1, 0.0])
-        transforms["link4"] = transforms["link3"] + np.array([l2 * s4 * c1, l2 * s4 * s1, l2 * c4])
-        transforms["link5"] = transforms["link4"].copy()
-        transforms["link6"] = transforms["link5"] + np.array([0.088 * c6 * c1, 0.088 * c6 * s1, 0.088 * s6])
-        transforms["link7"] = transforms["link6"] + np.array([l3 * c1, l3 * s1, 0.0])
-        
+
+        transforms["link2"] = transforms["link1"] + np.array([0.14 * s2 * c1, 0.14 * s2 * s1, 0.14 * c2])
+        transforms["link3"] = transforms["link2"] + np.array([0.14 * c1, 0.14 * s1, 0.0])
+        transforms["link4"] = transforms["link3"] + np.array([0.126 * c1, 0.126 * s1, 0.0])
+        transforms["link5"] = transforms["link4"] + np.array([0.06 * c1, 0.06 * s1, 0.0])
+        transforms["link6"] = transforms["link5"] + np.array([0.04 * c1, 0.04 * s1, 0.0])
+        transforms["link7"] = transforms["link6"] + np.array([0.09 * c1, 0.09 * s1, 0.0])
+
         return transforms
 
 
@@ -122,10 +122,10 @@ class OMPLPlanner:
     
     def __init__(self, num_joints: int = 7):
         self.num_joints = num_joints
-        
-        # Joint limits (Panda robot)
-        self.joint_limits_lower = np.array([-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973])
-        self.joint_limits_upper = np.array([2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973])
+
+        # Joint limits (GEN72 robot)
+        self.joint_limits_lower = GEN72Config.JOINT_LOWER_LIMITS
+        self.joint_limits_upper = GEN72Config.JOINT_UPPER_LIMITS
         
         # Planning parameters
         self.step_size = 0.2  # Maximum step in joint space
@@ -143,17 +143,11 @@ class OMPLPlanner:
         self.collision_checks = 0
         
     def _setup_robot(self):
-        """Set up robot collision model"""
-        links = [
-            create_robot_link("link0", CollisionObjectType.CYLINDER, np.array([0.06, 0.15]), 0),
-            create_robot_link("link1", CollisionObjectType.CYLINDER, np.array([0.06, 0.12]), 1),
-            create_robot_link("link2", CollisionObjectType.CYLINDER, np.array([0.05, 0.15]), 2),
-            create_robot_link("link3", CollisionObjectType.CYLINDER, np.array([0.05, 0.12]), 3),
-            create_robot_link("link4", CollisionObjectType.CYLINDER, np.array([0.045, 0.15]), 4),
-            create_robot_link("link5", CollisionObjectType.CYLINDER, np.array([0.04, 0.08]), 5),
-            create_robot_link("link6", CollisionObjectType.SPHERE, np.array([0.04]), 6),
-            create_robot_link("link7", CollisionObjectType.SPHERE, np.array([0.05]), 7),
-        ]
+        """Set up robot collision model from GEN72 config"""
+        links = []
+        for i, (geom_type, dims) in enumerate(GEN72Config.COLLISION_GEOMETRY):
+            obj_type = CollisionObjectType.CYLINDER if geom_type == "cylinder" else CollisionObjectType.SPHERE
+            links.append(create_robot_link(f"link{i}", obj_type, np.array(dims), i))
         self.collision_checker.set_robot_links(links)
         
     def add_obstacle(self, obj: CollisionObject):
@@ -167,27 +161,32 @@ class OMPLPlanner:
     def is_state_valid(self, config: np.ndarray) -> bool:
         """
         Check if a configuration is valid (collision-free and within limits).
-        
+
         This is the key callback used by OMPL planners.
-        
+
         Args:
             config: Joint configuration
-            
+
         Returns:
             True if valid (collision-free), False otherwise
         """
         self.collision_checks += 1
-        
+
         # Check joint limits
         if np.any(config < self.joint_limits_lower) or np.any(config > self.joint_limits_upper):
+            print(f"[DEBUG] Joint limit violation: {config[:3]}...")
             return False
-        
+
         # Compute link positions
         link_transforms = self.fk.compute_link_transforms(config)
-        
+
         # Check collision
-        is_valid, _ = self.collision_checker.is_state_valid(link_transforms)
-        
+        is_valid, result = self.collision_checker.is_state_valid(link_transforms)
+
+        if not is_valid:
+            print(f"[DEBUG] Collision detected for config {config[:3]}...")
+            print(f"[DEBUG] Collision result: {result}")
+
         return is_valid
     
     def is_motion_valid(self, config1: np.ndarray, config2: np.ndarray, resolution: float = 0.05) -> bool:

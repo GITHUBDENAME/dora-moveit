@@ -24,6 +24,7 @@ import pyarrow as pa
 from dataclasses import dataclass
 from typing import Optional, Tuple, List
 from dora import Node
+from robot_config import GEN72Config
 
 
 @dataclass
@@ -70,9 +71,9 @@ class NumericalIKSolver:
         self.orientation_tolerance = 1e-1
         self.step_size = 0.1
         
-        # Joint limits (Panda robot defaults)
-        self.joint_limits_lower = np.array([-2.8973, -1.7628, -2.8973, -3.0718, -2.8973, -0.0175, -2.8973])
-        self.joint_limits_upper = np.array([2.8973, 1.7628, 2.8973, -0.0698, 2.8973, 3.7525, 2.8973])
+        # Joint limits (GEN72 robot)
+        self.joint_limits_lower = GEN72Config.JOINT_LOWER_LIMITS
+        self.joint_limits_upper = GEN72Config.JOINT_UPPER_LIMITS
         
         # DH parameters (simplified Panda-like robot)
         # In production, load from URDF

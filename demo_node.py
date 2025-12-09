@@ -19,6 +19,7 @@ Run with: dora start dataflow.yml
 """
 
 import json
+from robot_config import GEN72Config
 import time
 import numpy as np
 import pyarrow as pa
@@ -53,14 +54,14 @@ class DemoNode:
     def __init__(self, num_joints: int = 7):
         self.num_joints = num_joints
         self.state = DemoState()
-        
-        # Initial robot configuration
-        self.state.current_joints = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        
+
+        # Initial robot configuration (GEN72 safe config)
+        self.state.current_joints = GEN72Config.SAFE_CONFIG.copy()
+
         # Demo configurations
-        self.home_config = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-        self.pick_config = np.array([0.0, 0.2, 0.0, -1.5, 0.0, 1.7, 0.785])
-        self.place_config = np.array([1.57, 0.2, 0.0, -1.5, 0.0, 1.7, 0.785])
+        self.home_config = GEN72Config.SAFE_CONFIG.copy()
+        self.pick_config = np.array([0.0, 0.2, 0.0, -1.5, 0.0, 1.0, 0.0])
+        self.place_config = np.array([1.57, 0.2, 0.0, -1.5, 0.0, 1.0, 0.0])
         
         # Demo sequence
         self.demo_sequence = [

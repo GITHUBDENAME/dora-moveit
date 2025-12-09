@@ -131,19 +131,19 @@ class PlanningSceneOperator:
         self.add_object(SceneObject(
             name="ground",
             obj_type="box",
-            position=np.array([0.0, 0.0, -0.05]),
+            position=np.array([0.0, 0.0, -3.0]),
             dimensions=np.array([2.0, 2.0, 0.02]),
             color=[0.3, 0.3, 0.3, 1.0]
         ))
 
-        # Table moved further away and lower to avoid collisions
-        self.add_object(SceneObject(
-            name="table",
-            obj_type="box",
-            position=np.array([0.6, 0.0, 0.3]),
-            dimensions=np.array([0.4, 0.6, 0.02]),
-            color=[0.6, 0.4, 0.2, 1.0]
-        ))
+        # # Table moved further away and lower to avoid collisions
+        # self.add_object(SceneObject(
+        #     name="table",
+        #     obj_type="box",
+        #     position=np.array([0.6, 0.0, 0.3]),
+        #     dimensions=np.array([0.4, 0.6, 0.02]),
+        #     color=[0.6, 0.4, 0.2, 1.0]
+        # ))
 
         print(f"  Default scene: {len(self.world_objects)} objects")
         
