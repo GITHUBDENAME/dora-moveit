@@ -1,0 +1,17 @@
+<mujoco model="GEN72">
+  <compiler angle="radian" meshdir="." />
+
+  <option gravity="0 0 -9.81" timestep="0.001" />
+
+  <include file="GEN72.urdf" />
+
+  <actuator>
+    <position name="actuator_joint1" joint="joint1" kp="100" ctrlrange="-3.0014 3.0014" />
+    <position name="actuator_joint2" joint="joint2" kp="100" ctrlrange="-1.8323 1.8323" />
+    <position name="actuator_joint3" joint="joint3" kp="100" ctrlrange="-3.0014 3.0014" />
+    <position name="actuator_joint4" joint="joint4" kp="100" ctrlrange="-2.8792 0.9597" />
+    <position name="actuator_joint5" joint="joint5" kp="50" ctrlrange="-3.0014 3.0014" />
+    <position name="actuator_joint6" joint="joint6" kp="50" ctrlrange="-1.707 1.783" />
+    <position name="actuator_joint7" joint="joint7" kp="50" ctrlrange="-3.0014 3.0014" />
+  </actuator>
+</mujoco>

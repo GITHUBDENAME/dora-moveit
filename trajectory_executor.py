@@ -23,22 +23,29 @@ class TrajectoryExecutor:
         self.trajectory: List[np.ndarray] = []
         self.current_waypoint_idx = 0
         self.current_joints: Optional[np.ndarray] = None
-        self.target_joints: Optional[np.ndarray] = None
+        self.prev_waypoint: Optional[np.ndarray] = None
         self.interpolation_progress = 0.0
-        self.interpolation_speed = 0.02  # Progress per tick (slower for visibility)
+        self.interpolation_speed = 0.1  # Progress per tick
         self.is_executing = False
         self.execution_count = 0
+        self.current_trajectory_hash: Optional[int] = None
         
-    def set_trajectory(self, trajectory: List[np.ndarray]):
+    def set_trajectory(self, trajectory: List[np.ndarray], trajectory_hash: int):
         """Set a new trajectory to execute"""
+        # Ignore duplicate trajectories
+        if self.current_trajectory_hash == trajectory_hash:
+            return
+
         self.trajectory = trajectory
-        self.current_waypoint_idx = 0
+        self.current_trajectory_hash = trajectory_hash
         self.interpolation_progress = 0.0
         self.is_executing = True
         self.execution_count += 1
-        
+
         if len(trajectory) > 0:
-            self.target_joints = trajectory[0]
+            # Start from first waypoint, execute from second
+            self.prev_waypoint = trajectory[0]
+            self.current_waypoint_idx = 1 if len(trajectory) > 1 else 0
             print(f"[Executor] New trajectory with {len(trajectory)} waypoints")
         
     def update_current_joints(self, joints: np.ndarray):
@@ -53,33 +60,34 @@ class TrajectoryExecutor:
         """
         if not self.is_executing or len(self.trajectory) == 0:
             return None
-        
-        if self.current_joints is None:
+
+        if self.prev_waypoint is None:
             return None
-        
+
         # Get current target waypoint
         target = self.trajectory[self.current_waypoint_idx]
-        
+
         # Interpolate towards target
         self.interpolation_progress += self.interpolation_speed
-        
+
         if self.interpolation_progress >= 1.0:
             # Reached waypoint, move to next
+            self.prev_waypoint = target
             self.current_waypoint_idx += 1
             self.interpolation_progress = 0.0
-            
+
             if self.current_waypoint_idx >= len(self.trajectory):
                 # Trajectory complete
                 self.is_executing = False
                 print(f"[Executor] Trajectory #{self.execution_count} complete!")
                 return self.trajectory[-1]  # Return final position
-            
+
             target = self.trajectory[self.current_waypoint_idx]
-        
-        # Interpolate between current position and target
+
+        # Interpolate between previous waypoint and target
         t = min(self.interpolation_progress, 1.0)
-        command = self.current_joints + t * (target - self.current_joints)
-        
+        command = self.prev_waypoint + t * (target - self.prev_waypoint)
+
         return command
     
     def get_status(self) -> dict:
@@ -95,10 +103,15 @@ class TrajectoryExecutor:
 
 def main():
     print("=== Dora-MoveIt Trajectory Executor ===")
-    
+
     node = Node()
     executor = TrajectoryExecutor(num_joints=7)
-    
+
+    # Initialize with safe config
+    from robot_config import GEN72Config
+    executor.current_joints = GEN72Config.SAFE_CONFIG.copy()
+    print(f"Initialized with safe config: {executor.current_joints[:3]}...")
+
     for event in node:
         event_type = event["type"]
         
@@ -112,11 +125,18 @@ def main():
                     metadata = event.get("metadata", {})
                     num_waypoints = metadata.get("num_waypoints", len(traj_flat) // 7)
                     num_joints = metadata.get("num_joints", 7)
-                    
+
                     trajectory = traj_flat.reshape(num_waypoints, num_joints)
                     trajectory_list = [trajectory[i] for i in range(num_waypoints)]
-                    executor.set_trajectory(trajectory_list)
-                    
+
+                    # Insert current position as first waypoint for smooth transition
+                    if executor.current_joints is not None:
+                        trajectory_list.insert(0, executor.current_joints.copy())
+
+                    # Compute hash to detect duplicate trajectories
+                    traj_hash = hash(traj_flat.tobytes())
+                    executor.set_trajectory(trajectory_list, traj_hash)
+
                 except Exception as e:
                     print(f"[Executor] Trajectory error: {e}")
                     
@@ -131,21 +151,27 @@ def main():
             elif input_id == "tick":
                 # Execute trajectory step
                 command = executor.step()
-                
+
+                # Always send command (current position if not executing)
                 if command is not None:
                     node.send_output(
                         "joint_commands",
                         pa.array(command, type=pa.float32())
                     )
+                elif executor.current_joints is not None:
+                    # Send current position when idle
+                    node.send_output(
+                        "joint_commands",
+                        pa.array(executor.current_joints, type=pa.float32())
+                    )
                 
                 # Send status periodically
                 status = executor.get_status()
-                if status["is_executing"]:
-                    status_bytes = json.dumps(status).encode('utf-8')
-                    node.send_output(
-                        "execution_status",
-                        pa.array(list(status_bytes), type=pa.uint8())
-                    )
+                status_bytes = json.dumps(status).encode('utf-8')
+                node.send_output(
+                    "execution_status",
+                    pa.array(list(status_bytes), type=pa.uint8())
+                )
                     
         elif event_type == "STOP":
             print("Trajectory executor stopping...")

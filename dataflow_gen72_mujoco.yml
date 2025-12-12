@@ -25,7 +25,7 @@ nodes:
       - joint_velocities
       - sensor_data
     env:
-      MODEL_NAME: "panda_mj_description" # 使用 Panda 模型做可视化
+      MODEL_NAME: "F:/2-DORA/2-arm/dora-moveit/dora-moveit/GEN72/urdf/gen_72_b_description/meshes/GEN72.urdf"
 
   # ===========================================
   # Planning Scene 管理器（统一场景）
@@ -83,6 +83,8 @@ nodes:
   - id: capture
     path: multi_view_capture_node.py
     inputs:
+      joint_positions: mujoco_sim/joint_positions # 实时关节位置
+      execution_status: trajectory_executor/execution_status # 轨迹执行状态
       trajectory: planner/trajectory              # 用来更新当前关节、决定下一视角
       plan_status: planner/plan_status            # 了解规划是否成功，失败则尝试附近位姿
       ik_solution: ik_solver/ik_solution          # IK 输出的关节解（交给 planner 做 goal）

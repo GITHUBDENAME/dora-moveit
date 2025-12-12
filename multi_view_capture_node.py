@@ -44,6 +44,9 @@ class MultiViewCaptureNode:
         self.state = "init"  # init -> moving -> capturing -> complete
         self.ik_attempts = 0
         self.max_ik_attempts = 5
+        self.waiting_for_execution = False
+        self.waiting_for_planning = False
+        self.expected_execution_count = 0
 
         # Camera configuration (configurable via environment variables)
         # CAPTURE_CAMERA_INDEX: camera index (default 0)
@@ -79,7 +82,17 @@ class MultiViewCaptureNode:
     def _handle_input(self, node: Node, event):
         event_id = event["id"]
 
-        if event_id == "ik_solution":
+        if event_id == "joint_positions":
+            # Update current joints from MuJoCo
+            try:
+                joints = event["value"].to_numpy()
+                self.current_joints = joints[:7].copy()
+            except Exception:
+                pass
+        elif event_id == "execution_status":
+            # Check if trajectory execution completed
+            self._handle_execution_status(node, event["value"])
+        elif event_id == "ik_solution":
             # ik_op.py: sends pyarrow.FloatArray(solution)
             self._handle_ik_solution(node, event["value"])
         elif event_id == "trajectory":
@@ -91,6 +104,10 @@ class MultiViewCaptureNode:
 
     def _handle_ik_solution(self, node: Node, data):
         """Handle IK solution"""
+        # Ignore if already waiting for planning or execution
+        if self.waiting_for_planning or self.waiting_for_execution:
+            return
+
         try:
             if hasattr(data, "to_numpy"):
                 joints = data.to_numpy()
@@ -112,6 +129,8 @@ class MultiViewCaptureNode:
                 self._next_target(node)
         else:
             print(f"  IK solved: {joints[:3]}...")
+            # Mark as waiting for planning
+            self.waiting_for_planning = True
             # Request motion plan
             self._request_plan(node, self.current_joints, joints)
 
@@ -141,8 +160,48 @@ class MultiViewCaptureNode:
         else:
             print("  Planning succeeded")
 
+    def _handle_execution_status(self, node: Node, data):
+        """Handle trajectory execution status"""
+        if not self.waiting_for_execution:
+            return
+
+        try:
+            status_bytes = bytes(data.to_numpy())
+            status = json.loads(status_bytes.decode('utf-8'))
+
+            # Check if this is the expected execution and it completed
+            if (status.get("execution_count", 0) == self.expected_execution_count and
+                not status.get("is_executing", True)):
+                self._on_execution_complete(node)
+        except Exception:
+            pass
+
+    def _on_execution_complete(self, node: Node):
+        """Called when trajectory execution completes"""
+        print("  Execution complete!")
+
+        # Capture image at current position
+        self._capture_image(node)
+
+        # Move to next target
+        self.current_target_idx += 1
+        if self.current_target_idx >= len(self.targets):
+            print("\nAll captures complete!")
+            self.state = "complete"
+            self.waiting_for_execution = False
+            return
+
+        # Continue to next viewpoint
+        self.waiting_for_execution = False
+        time.sleep(0.5)
+        self._next_target(node)
+
     def _handle_trajectory(self, node: Node, event):
         """Handle planned trajectory"""
+        # Ignore if already waiting for execution
+        if self.waiting_for_execution:
+            return
+
         value = event["value"]
         metadata = event.get("metadata", {}) if isinstance(event, dict) else {}
 
@@ -169,21 +228,11 @@ class MultiViewCaptureNode:
 
         print(f"  Trajectory received: {len(waypoints)} waypoints")
 
-        # 1. 更新当前关节
-        self.current_joints = waypoints[-1]
-
-        # 2. 在当前视角拍照
-        self._capture_image(node)
-
-        # 3. 切换到下一个视角
-        self.current_target_idx += 1
-        if self.current_target_idx >= len(self.targets):
-            print("\nAll captures complete!")
-            return
-
-        # 4. 继续下一个视角的 IK + 规划
-        time.sleep(0.5)
-        self._next_target(node)
+        # Mark as waiting for execution to complete
+        self.waiting_for_planning = False
+        self.waiting_for_execution = True
+        self.expected_execution_count += 1
+        print(f"  Waiting for execution #{self.expected_execution_count} to complete...")
 
 
     # --------------------- Core Logic --------------------- #
@@ -226,10 +275,14 @@ class MultiViewCaptureNode:
 
     def _next_target(self, node: Node):
         """Move to next capture target"""
+        if self.state == "complete":
+            return
+
         self.ik_attempts = 0
 
         if self.current_target_idx >= len(self.targets):
             print("\nAll captures complete!")
+            self.state = "complete"
             return
 
         target = self.targets[self.current_target_idx]
