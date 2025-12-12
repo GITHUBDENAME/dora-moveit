@@ -29,6 +29,7 @@ class TrajectoryExecutor:
         self.is_executing = False
         self.execution_count = 0
         self.current_trajectory_hash: Optional[int] = None
+        self.last_command: Optional[np.ndarray] = None  # Remember last position
         
     def set_trajectory(self, trajectory: List[np.ndarray], trajectory_hash: int):
         """Set a new trajectory to execute"""
@@ -46,6 +47,7 @@ class TrajectoryExecutor:
             # Start from first waypoint, execute from second
             self.prev_waypoint = trajectory[0]
             self.current_waypoint_idx = 1 if len(trajectory) > 1 else 0
+            self.last_command = trajectory[0].copy()  # Update last_command to start position
             print(f"[Executor] New trajectory with {len(trajectory)} waypoints")
         
     def update_current_joints(self, joints: np.ndarray):
@@ -59,10 +61,10 @@ class TrajectoryExecutor:
         Returns joint command or None if not executing.
         """
         if not self.is_executing or len(self.trajectory) == 0:
-            return None
+            return self.last_command  # Keep holding last position
 
         if self.prev_waypoint is None:
-            return None
+            return self.last_command
 
         # Get current target waypoint
         target = self.trajectory[self.current_waypoint_idx]
@@ -79,14 +81,16 @@ class TrajectoryExecutor:
             if self.current_waypoint_idx >= len(self.trajectory):
                 # Trajectory complete
                 self.is_executing = False
+                self.last_command = self.trajectory[-1].copy()
                 print(f"[Executor] Trajectory #{self.execution_count} complete!")
-                return self.trajectory[-1]  # Return final position
+                return self.last_command
 
             target = self.trajectory[self.current_waypoint_idx]
 
         # Interpolate between previous waypoint and target
         t = min(self.interpolation_progress, 1.0)
         command = self.prev_waypoint + t * (target - self.prev_waypoint)
+        self.last_command = command.copy()
 
         return command
     
@@ -110,6 +114,7 @@ def main():
     # Initialize with safe config
     from robot_config import GEN72Config
     executor.current_joints = GEN72Config.SAFE_CONFIG.copy()
+    executor.last_command = GEN72Config.SAFE_CONFIG.copy()  # Initialize last_command
     print(f"Initialized with safe config: {executor.current_joints[:3]}...")
 
     for event in node:
@@ -130,7 +135,10 @@ def main():
                     trajectory_list = [trajectory[i] for i in range(num_waypoints)]
 
                     # Insert current position as first waypoint for smooth transition
-                    if executor.current_joints is not None:
+                    # Use last_command if available (more accurate than current_joints)
+                    if executor.last_command is not None:
+                        trajectory_list.insert(0, executor.last_command.copy())
+                    elif executor.current_joints is not None:
                         trajectory_list.insert(0, executor.current_joints.copy())
 
                     # Compute hash to detect duplicate trajectories

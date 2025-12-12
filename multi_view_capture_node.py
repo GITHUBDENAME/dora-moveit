@@ -54,7 +54,24 @@ class MultiViewCaptureNode:
         self.camera_index = int(os.getenv("CAPTURE_CAMERA_INDEX", "0"))
         self.output_dir = os.getenv("CAPTURE_OUTPUT_DIR", "captures")
         os.makedirs(self.output_dir, exist_ok=True)
-        self.cap = None  # Lazy camera open
+
+        # Initialize camera immediately
+        self.cap = None
+        try:
+            import cv2 as cv
+            self.cap = cv.VideoCapture(self.camera_index)
+            if self.cap.isOpened():
+                print(f"Camera {self.camera_index} initialized successfully")
+                # Warm up camera by reading a few frames
+                for _ in range(5):
+                    self.cap.read()
+                print("Camera warmed up and ready")
+            else:
+                print(f"Warning: Failed to open camera {self.camera_index}")
+                self.cap.release()
+                self.cap = None
+        except ImportError:
+            print("Warning: OpenCV not installed, camera capture disabled")
 
         print("=== Multi-View Capture Node ===")
         print(f"Targets: {len(self.targets)} viewpoints")
@@ -170,29 +187,30 @@ class MultiViewCaptureNode:
             status = json.loads(status_bytes.decode('utf-8'))
 
             # Check if this is the expected execution and it completed
-            if (status.get("execution_count", 0) == self.expected_execution_count and
-                not status.get("is_executing", True)):
+            exec_count = status.get("execution_count", 0)
+            is_executing = status.get("is_executing", True)
+
+            if exec_count == self.expected_execution_count and not is_executing:
+                self.waiting_for_execution = False
                 self._on_execution_complete(node)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Capture] Error handling execution status: {e}")
 
     def _on_execution_complete(self, node: Node):
         """Called when trajectory execution completes"""
         print("  Execution complete!")
 
-        # Capture image at current position
+        # Reached target position, capture image
         self._capture_image(node)
 
         # Move to next target
         self.current_target_idx += 1
+
         if self.current_target_idx >= len(self.targets):
             print("\nAll captures complete!")
             self.state = "complete"
-            self.waiting_for_execution = False
             return
 
-        # Continue to next viewpoint
-        self.waiting_for_execution = False
         time.sleep(0.5)
         self._next_target(node)
 
@@ -243,35 +261,28 @@ class MultiViewCaptureNode:
         print("\nCapturing image at", target.name)
         print("   Position:", target.position[:3])
 
+        if self.cap is None:
+            print("   Camera not available, skipping capture")
+            return
+
         try:
             import cv2 as cv
-        except ImportError:
-            print("   OpenCV not installed, skipping actual capture")
-            return
-
-        # Lazily open camera
-        if self.cap is None:
-            self.cap = cv.VideoCapture(self.camera_index)
-            if not self.cap.isOpened():
-                print("   Failed to open camera index", self.camera_index)
-                self.cap.release()
-                self.cap = None
+            # Grab a single frame
+            ok, frame = self.cap.read()
+            if not ok or frame is None:
+                print("   Failed to grab frame from camera")
                 return
 
-        # Grab a single frame
-        ok, frame = self.cap.read()
-        if not ok or frame is None:
-            print("   Failed to grab frame from camera")
-            return
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            filename = f"{target.name}_{timestamp}.png"
+            filepath = os.path.join(self.output_dir, filename)
 
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        filename = f"{target.name}_{timestamp}.png"
-        filepath = os.path.join(self.output_dir, filename)
-
-        if cv.imwrite(filepath, frame):
-            print("   Image saved:", filepath)
-        else:
-            print("   Failed to write image file")
+            if cv.imwrite(filepath, frame):
+                print("   Image saved:", filepath)
+            else:
+                print("   Failed to write image file")
+        except Exception as e:
+            print(f"   Capture error: {e}")
 
     def _next_target(self, node: Node):
         """Move to next capture target"""
