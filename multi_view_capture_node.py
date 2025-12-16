@@ -200,6 +200,13 @@ class MultiViewCaptureNode:
         """Called when trajectory execution completes"""
         print("  Execution complete!")
 
+        # Check if we're returning home (final step)
+        if self.state == "returning_home":
+            print("\nReached home position. Workflow complete!")
+            print("Staying idle at HOME position. Press Ctrl+C to exit.")
+            self.state = "idle"
+            return
+
         # Reached target position, capture image
         self._capture_image(node)
 
@@ -207,8 +214,11 @@ class MultiViewCaptureNode:
         self.current_target_idx += 1
 
         if self.current_target_idx >= len(self.targets):
-            print("\nAll captures complete!")
-            self.state = "complete"
+            print("\nAll captures complete! Returning to home position...")
+            self.state = "returning_home"
+            self.waiting_for_planning = True
+            # Send robot back to HOME position to stop motion
+            self._return_to_home(node)
             return
 
         time.sleep(0.5)
@@ -336,6 +346,13 @@ class MultiViewCaptureNode:
             "plan_request",
             pa.array(list(request_bytes), type=pa.uint8())
         )
+
+    def _return_to_home(self, node: Node):
+        """Return robot to home position after completing all captures"""
+        home_config = GEN72Config.HOME_CONFIG
+        print(f"Planning return to home: {home_config[:3]}...")
+        self._request_plan(node, self.current_joints, home_config)
+        # After this completes, the workflow will naturally end
 
     def _send_robot_state(self, node: Node, joints: np.ndarray):
         """Send robot state (currently not wired in dataflow, kept for extension)"""

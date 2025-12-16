@@ -1,25 +1,19 @@
-# Dora-MoveIt + MuJoCo Integration
-# =================================
-# Tests the motion planner with MuJoCo Panda robot simulation
-#
-# Run: dora start dataflow_mujoco.yml
+# GEN72 Real Robot Multi-View Capture
+# ====================================
+# Uses physical GEN72 robot instead of MuJoCo simulation
 
 nodes:
   # ===========================================
-  # MuJoCo Simulator (Panda Robot)
+  # GEN72 Real Robot Control
   # ===========================================
-  - id: mujoco_sim
-    build: pip install -e ../dora-mujoco
-    path: dora-mujoco
+  - id: gen72_robot
+    path: gen72_robot_node.py
     inputs:
-      tick: dora/timer/millis/10  # 100 Hz simulation
+      tick: dora/timer/millis/200                # 20 Hz update rate
       control_input: trajectory_executor/joint_commands
     outputs:
       - joint_positions
       - joint_velocities
-      - sensor_data
-    env:
-      MODEL_NAME: "panda_mj_description"  # Franka Panda robot
 
   # ===========================================
   # Planning Scene Manager
@@ -27,9 +21,9 @@ nodes:
   - id: planning_scene
     path: planning_scene_op.py
     inputs:
-      robot_state: mujoco_sim/joint_positions
-      scene_command: motion_commander/scene_command
-      tick: dora/timer/millis/5000
+      robot_state: gen72_robot/joint_positions
+      scene_command: capture/scene_command
+      tick: dora/timer/millis/20000
     outputs:
       - scene_update
       - command_result
@@ -40,7 +34,7 @@ nodes:
   - id: planner
     path: planner_ompl_with_collision_op.py
     inputs:
-      plan_request: motion_commander/plan_request
+      plan_request: capture/plan_request
       scene_update: planning_scene/scene_update
     outputs:
       - trajectory
@@ -52,8 +46,7 @@ nodes:
   - id: ik_solver
     path: ik_op.py
     inputs:
-      ik_request: motion_commander/ik_request
-      joint_state: mujoco_sim/joint_positions
+      ik_request: capture/ik_request
     outputs:
       - ik_solution
       - ik_status
@@ -61,30 +54,30 @@ nodes:
   # ===========================================
   # Trajectory Executor
   # ===========================================
-  # Executes planned trajectories on the robot
   - id: trajectory_executor
     path: trajectory_executor.py
     inputs:
       trajectory: planner/trajectory
-      joint_positions: mujoco_sim/joint_positions
-      tick: dora/timer/millis/50  # 20 Hz execution
+      joint_positions: gen72_robot/joint_positions
+      tick: dora/timer/millis/200
     outputs:
       - joint_commands
       - execution_status
 
   # ===========================================
-  # Motion Commander (Test Interface)
+  # Multi-View Capture Controller
   # ===========================================
-  - id: motion_commander
-    path: motion_commander.py
+  - id: capture
+    path: multi_view_capture_node.py
     inputs:
-      tick: dora/timer/millis/3000  # Slow tick for demo
-      plan_status: planner/plan_status
-      ik_status: ik_solver/ik_status
+      joint_positions: gen72_robot/joint_positions
       execution_status: trajectory_executor/execution_status
-      joint_positions: mujoco_sim/joint_positions
+      trajectory: planner/trajectory
+      plan_status: planner/plan_status
+      ik_solution: ik_solver/ik_solution
+      ik_status: ik_solver/ik_status
     outputs:
+      - robot_state
       - plan_request
       - ik_request
       - scene_command
-

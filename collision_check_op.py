@@ -39,6 +39,16 @@ from collision_lib import (
 from pointcloud_collision import PointCloudCollisionChecker
 from robot_config import GEN72Config
 
+# Realman SDK (optional - only if USE_REALMAN_API is True)
+USE_REALMAN_API = False  # Set to True to use Realman official collision detection
+try:
+    from Robotic_Arm.rm_robot_interface import *
+    REALMAN_AVAILABLE = True
+except ImportError:
+    REALMAN_AVAILABLE = False
+    if USE_REALMAN_API:
+        print("[Warning] Realman SDK not found, falling back to built-in collision checker")
+
 
 @dataclass
 class CollisionCheckRequest:
@@ -124,12 +134,24 @@ class CollisionCheckOperator:
     Maintains collision checking state and responds to collision queries.
     """
 
-    def __init__(self, enable_pointcloud: bool = False):
+    def __init__(self, enable_pointcloud: bool = False, robot_ip: str = "192.168.1.18", robot_port: int = 8080):
         self.checker = CollisionChecker()
         self.fk = GEN72FK()
         self.check_count = 0
         self.last_scene_version = -1
         self.enable_pointcloud = enable_pointcloud
+
+        # Initialize Realman robot connection if using official API
+        self.realman_handle = None
+        if USE_REALMAN_API and REALMAN_AVAILABLE:
+            try:
+                self.realman_handle = rm_create_robot_arm(robot_ip, robot_port)
+                if self.realman_handle:
+                    print(f"[Collision] Connected to Realman robot at {robot_ip}:{robot_port}")
+                else:
+                    print("[Collision] Failed to connect to Realman robot, using built-in checker")
+            except Exception as e:
+                print(f"[Collision] Realman connection error: {e}, using built-in checker")
 
         # Initialize point cloud collision checker (interface ready, disabled by default)
         if enable_pointcloud:
@@ -147,6 +169,7 @@ class CollisionCheckOperator:
         print(f"  Robot links: {len(self.checker.robot_links)}")
         print(f"  Environment objects: {len(self.checker.environment_objects)}")
         print(f"  Point cloud collision: {'enabled' if enable_pointcloud else 'disabled (interface ready)'}")
+        print(f"  Self-collision method: {'Realman API' if self.realman_handle else 'Built-in'}")
         
     def _setup_robot_collision_model(self):
         """Set up robot collision geometries - using GEN72Config parameters"""
@@ -236,26 +259,52 @@ class CollisionCheckOperator:
         # Compute link transforms from joint positions
         link_transforms = self.fk.compute_link_transforms(request.joint_positions)
 
+        # Check self-collision using Realman API if available
+        self_collision = False
+        collision_result = None
 
-        # Check collision with geometric objects
-        is_valid, collision_result = self.checker.is_state_valid(
-            link_transforms,
-            check_self=request.check_self_collision,
-            check_environment=request.check_environment
-        )
+        if request.check_self_collision:
+            if self.realman_handle:
+                # Use Realman official API for self-collision
+                try:
+                    ret = rm_get_joint_collision(self.realman_handle, request.joint_positions.tolist())
+                    if isinstance(ret, tuple) and len(ret) >= 2:
+                        self_collision = (ret[1] == 1)  # 1 means collision detected
+                except Exception as e:
+                    print(f"[Collision] Realman API error: {e}, using built-in checker")
+                    is_valid, collision_result = self.checker.is_state_valid(
+                        link_transforms, check_self=True, check_environment=False
+                    )
+                    self_collision = not is_valid
+            else:
+                # Use built-in self-collision checker
+                is_valid, collision_result = self.checker.is_state_valid(
+                    link_transforms, check_self=True, check_environment=False
+                )
+                self_collision = not is_valid
+
+        # Check environment collision (always use built-in checker)
+        env_collision = False
+        if request.check_environment:
+            is_valid, env_result = self.checker.is_state_valid(
+                link_transforms, check_self=False, check_environment=True
+            )
+            env_collision = not is_valid
+            if env_collision and env_result:
+                collision_result = env_result
 
         result = {
             "check_id": self.check_count,
-            "in_collision": not is_valid,
+            "in_collision": self_collision or env_collision,
             "joint_positions": request.joint_positions.tolist()
         }
 
-        if not is_valid and collision_result:
+        if (self_collision or env_collision) and collision_result:
             result["collision_info"] = {
                 "object_a": collision_result.object_a,
                 "object_b": collision_result.object_b,
                 "penetration_depth": float(collision_result.penetration_depth),
-                "type": "geometric"
+                "type": "self-collision" if self_collision else "environment"
             }
             if collision_result.contact_points:
                 result["collision_info"]["contact_point"] = collision_result.contact_points[0].tolist()
