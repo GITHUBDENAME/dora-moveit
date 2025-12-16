@@ -25,29 +25,31 @@ class MotionCommander:
         self.waiting_for_plan = False
         self.waiting_for_execution = False
         
-        # Define target configurations for Panda robot
-        # Joint limits: [-2.90, 2.90], [-1.76, 1.76], [-2.90, 2.90], [-3.07, -0.07],
-        #               [-2.90, 2.90], [-0.02, 3.75], [-2.90, 2.90]
+        # Define target configurations for GEN72 robot
+        # Joint limits from URDF:
+        # joint1: [-3.0014, 3.0014], joint2: [-1.8323, 1.8323], joint3: [-3.0014, 3.0014]
+        # joint4: [-2.8792, 0.9597], joint5: [-3.0014, 3.0014], joint6: [-1.707, 1.783]
+        # joint7: [-3.0014, 3.0014]
 
-        # Home position - robot arm up and centered (easy starting pose)
-        self.home_config = np.array([0.0, 0.0, 0.0, -1.57, 0.0, 1.57, 0.0])
+        # Home position - safe starting pose
+        self.home_config = np.array([0.0, -0.5, 0.0, 0.0, 0.0, 0.5, 0.0])
 
         # Simple pick/place configurations - small movements, easy to plan
         self.poses = [
             # First go to a safe home position
-            ("home", np.array([0.0, 0.0, 0.0, -1.57, 0.0, 1.57, 0.0])),
+            ("home", np.array([0.0, -0.5, 0.0, 0.0, 0.0, 0.5, 0.0])),
             # Move to right side
-            ("right", np.array([0.5, 0.0, 0.0, -1.57, 0.0, 1.57, 0.0])),
+            ("right", np.array([0.5, -0.5, 0.0, 0.0, 0.0, 0.5, 0.0])),
             # Move down slightly
-            ("right_low", np.array([0.5, 0.3, 0.0, -1.2, 0.0, 1.57, 0.0])),
+            ("right_low", np.array([0.5, -0.3, 0.0, -0.5, 0.0, 0.5, 0.0])),
             # Back up
-            ("right", np.array([0.5, 0.0, 0.0, -1.57, 0.0, 1.57, 0.0])),
+            ("right", np.array([0.5, -0.5, 0.0, 0.0, 0.0, 0.5, 0.0])),
             # Move to left side
-            ("left", np.array([-0.5, 0.0, 0.0, -1.57, 0.0, 1.57, 0.0])),
+            ("left", np.array([-0.5, -0.5, 0.0, 0.0, 0.0, 0.5, 0.0])),
             # Move down slightly
-            ("left_low", np.array([-0.5, 0.3, 0.0, -1.2, 0.0, 1.57, 0.0])),
+            ("left_low", np.array([-0.5, -0.3, 0.0, -0.5, 0.0, 0.5, 0.0])),
             # Back to home
-            ("home", np.array([0.0, 0.0, 0.0, -1.57, 0.0, 1.57, 0.0])),
+            ("home", np.array([0.0, -0.5, 0.0, 0.0, 0.0, 0.5, 0.0])),
         ]
         
         self.pose_idx = 0

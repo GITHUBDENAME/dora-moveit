@@ -11,7 +11,7 @@ This is a pluggable IK solver - can be swapped with any IK implementation:
 - External IK service
 
 Input: target_pose (6D: x, y, z, roll, pitch, yaw) or (7D: x, y, z, qw, qx, qy, qz)
-Output: joint_positions (7D for Panda-like robot)
+Output: joint_positions (7D for GEN72 robot)
 
 Dora Integration:
 - Receives: ik_request (pose), joint_state (current joints for seeding)
@@ -25,25 +25,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple, List
 from dora import Node
 from robot_config import GEN72Config
-
-
-@dataclass
-class IKRequest:
-    """IK request containing target pose and optional seed"""
-    target_position: np.ndarray  # [x, y, z]
-    target_orientation: np.ndarray  # [qw, qx, qy, qz] or [roll, pitch, yaw]
-    seed_joints: Optional[np.ndarray] = None
-    orientation_type: str = "quaternion"  # "quaternion" or "rpy"
-
-
-@dataclass
-class IKResult:
-    """Result of IK computation"""
-    success: bool
-    joint_positions: np.ndarray
-    error: float  # Position error
-    iterations: int
-    message: str = ""
+from advanced_ik_solver import TracIKSolver, DifferentialEvolutionIKSolver, IKRequest, IKResult
 
 
 class NumericalIKSolver:
@@ -66,71 +48,67 @@ class NumericalIKSolver:
             num_joints: Number of robot joints
         """
         self.num_joints = num_joints
-        self.max_iterations = 300
-        self.position_tolerance = 5e-1
+        self.max_iterations = 500
+        self.position_tolerance = 0.01
         self.orientation_tolerance = 1e-1
-        self.step_size = 0.1
+        self.step_size = 0.5
         
         # Joint limits (GEN72 robot)
         self.joint_limits_lower = GEN72Config.JOINT_LOWER_LIMITS
         self.joint_limits_upper = GEN72Config.JOINT_UPPER_LIMITS
         
-        # DH parameters (simplified Panda-like robot)
-        # In production, load from URDF
-        self.link_lengths = np.array([0.333, 0.0, 0.316, 0.0825, 0.384, 0.0, 0.107])
+        # Link transforms from GEN72 URDF
+        self.link_transforms = GEN72Config.LINK_TRANSFORMS
         
     def forward_kinematics(self, joint_positions: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Compute forward kinematics.
-        
+        Compute forward kinematics using GEN72 link transforms.
+
         Args:
             joint_positions: Joint angles [7]
-            
+
         Returns:
             Tuple of (position [3], rotation_matrix [3x3])
         """
-        # Simplified FK for demo - computes approximate end-effector position
-        # In production, use proper FK from URDF/DH parameters
-        
         q = joint_positions
-        
-        # Approximate position based on joint angles
-        # This is a placeholder - real FK should use DH parameters
-        x = 0.0
-        y = 0.0
-        z = 0.333  # Base height
-        
-        # Accumulate position through links (simplified)
-        c1, s1 = np.cos(q[0]), np.sin(q[0])
-        c2, s2 = np.cos(q[1]), np.sin(q[1])
-        c3, s3 = np.cos(q[2]), np.sin(q[2])
-        c4, s4 = np.cos(q[3]), np.sin(q[3])
-        c5, s5 = np.cos(q[4]), np.sin(q[4])
-        c6, s6 = np.cos(q[5]), np.sin(q[5])
-        
-        # Simplified forward kinematics
-        l1, l2, l3 = 0.316, 0.384, 0.107
-        
-        # Shoulder contribution
-        x += l1 * s2 * c1
-        y += l1 * s2 * s1
-        z += l1 * c2
-        
-        # Elbow contribution
-        x += l2 * (c1 * c2 * s4 + s1 * c4)
-        y += l2 * (s1 * c2 * s4 - c1 * c4)
-        z += l2 * (-s2 * s4)
-        
-        # Wrist contribution
-        x += l3 * c1 * c5
-        y += l3 * s1 * c5
-        z += l3 * s5
-        
-        position = np.array([x, y, z])
-        
-        # Simplified rotation (identity for demo)
-        rotation = np.eye(3)
-        
+
+        # Helper function for rotation matrices
+        def rot_z(angle):
+            c, s = np.cos(angle), np.sin(angle)
+            return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+        def rot_x(angle):
+            c, s = np.cos(angle), np.sin(angle)
+            return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+
+        # Start from base
+        T = np.eye(4)
+
+        # Apply each joint transform from GEN72Config.LINK_TRANSFORMS
+        transforms = GEN72Config.LINK_TRANSFORMS
+
+        for i, (joint_angle, link_tf) in enumerate(zip(q, transforms)):
+            # Extract xyz and rpy from link transform
+            xyz = np.array(link_tf["xyz"])
+            rpy = link_tf["rpy"]
+
+            # Build transform matrix for this link
+            R_link = rot_z(rpy[2]) @ rot_x(rpy[0])  # Simplified: only use roll and yaw
+            T_link = np.eye(4)
+            T_link[:3, :3] = R_link
+            T_link[:3, 3] = xyz
+
+            # Apply link transform
+            T = T @ T_link
+
+            # Apply joint rotation (all joints rotate around Z-axis)
+            T_joint = np.eye(4)
+            T_joint[:3, :3] = rot_z(joint_angle)
+            T = T @ T_joint
+
+        position = T[:3, 3]
+        rotation = T[:3, :3]
+
         return position, rotation
     
     def compute_jacobian(self, joint_positions: np.ndarray) -> np.ndarray:
@@ -174,11 +152,11 @@ class NumericalIKSolver:
         """
         target_pos = request.target_position
         
-        # Initialize with seed or zeros
+        # Initialize with seed or safe config
         if request.seed_joints is not None:
             q = request.seed_joints.copy()
         else:
-            q = np.zeros(self.num_joints)
+            q = GEN72Config.SAFE_CONFIG.copy()
         
         for iteration in range(self.max_iterations):
             # Ensure q is 1D with correct size
@@ -205,7 +183,7 @@ class NumericalIKSolver:
             J = self.compute_jacobian(q)[:3, :]  # Position only (3x7)
 
             # Damped least squares (Levenberg-Marquardt)
-            damping = 0.01
+            damping = 0.001
             JJT = J @ J.T
             J_pinv = J.T @ np.linalg.inv(JJT + damping * np.eye(3))
 
@@ -232,18 +210,35 @@ class NumericalIKSolver:
 class IKOperator:
     """
     Dora operator for Inverse Kinematics.
-    
+
     Inputs:
         - ik_request: Target pose [x, y, z, roll, pitch, yaw] or [x, y, z, qw, qx, qy, qz]
         - joint_state: Current joint positions (for seeding)
-        
+
     Outputs:
         - ik_solution: Joint positions if successful
         - ik_status: JSON with success/error info
     """
-    
-    def __init__(self, num_joints: int = 7):
-        self.solver = NumericalIKSolver(num_joints)
+
+    def __init__(self, num_joints: int = 7, solver_type: str = "tracik"):
+        """
+        Initialize IK operator.
+
+        Args:
+            num_joints: Number of joints
+            solver_type: "tracik" (default), "de" (differential evolution), or "simple"
+        """
+        if solver_type == "tracik":
+            self.solver = TracIKSolver()
+            print("[IK] Using TracIK solver (advanced)")
+        elif solver_type == "de":
+            self.solver = DifferentialEvolutionIKSolver()
+            print("[IK] Using Differential Evolution solver")
+        else:
+            self.solver = NumericalIKSolver(num_joints)
+            print("[IK] Using simple numerical solver")
+
+        self.solver_type = solver_type
         self.current_joints: Optional[np.ndarray] = None
         self.request_count = 0
         
@@ -310,10 +305,11 @@ class IKOperator:
 def main():
     """Main entry point for Dora IK operator"""
     print("=== Dora-MoveIt IK Operator ===")
-    
+
     node = Node()
-    ik_op = IKOperator(num_joints=7)
-    
+    # Use TracIK solver by default (can be changed to "de" or "simple")
+    ik_op = IKOperator(num_joints=7, solver_type="tracik")
+
     print("IK operator started, waiting for requests...")
     
     for event in node:

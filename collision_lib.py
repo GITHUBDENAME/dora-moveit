@@ -114,7 +114,7 @@ class CollisionChecker:
         self.self_collision_pairs = []
         n = len(self.robot_links)
         for i in range(n):
-            for j in range(i + 6, n):  # Skip kinematic chain links
+            for j in range(i + 3, n):  # Skip 2 adjacent links in kinematic chain
                 self.self_collision_pairs.append((i, j))
     
     # ==================== Primitive Collision Functions ====================
@@ -251,7 +251,7 @@ class CollisionChecker:
     ) -> CollisionResult:
         """
         Check collision between a sphere and a vertical cylinder.
-        
+
         Args:
             sphere_pos: Center of sphere [x, y, z]
             sphere_r: Radius of sphere
@@ -259,42 +259,99 @@ class CollisionChecker:
             cyl_r: Radius of cylinder
             cyl_h: Height of cylinder
             margin: Safety margin
-            
+
         Returns:
             CollisionResult with collision information
         """
         result = CollisionResult(in_collision=False)
-        
+
         # Project sphere center onto cylinder axis
         cyl_center = cyl_pos.copy()
         cyl_center[2] += cyl_h / 2  # Center of cylinder
-        
+
         # Clamp z to cylinder height
         z_clamped = np.clip(sphere_pos[2], cyl_pos[2], cyl_pos[2] + cyl_h)
-        
+
         # Distance in xy plane
         xy_diff = sphere_pos[:2] - cyl_pos[:2]
         xy_dist = np.linalg.norm(xy_diff)
-        
+
         # Closest point on cylinder surface
         if xy_dist > 1e-6:
             closest_xy = cyl_pos[:2] + xy_diff / xy_dist * min(xy_dist, cyl_r)
         else:
             closest_xy = cyl_pos[:2]
-        
+
         closest_point = np.array([closest_xy[0], closest_xy[1], z_clamped])
-        
+
         diff = sphere_pos - closest_point
         dist = np.linalg.norm(diff)
-        
+
         result.min_distance = dist - sphere_r
         effective_radius = sphere_r + margin
-        
+
         if dist < effective_radius:
             result.in_collision = True
             result.penetration_depth = effective_radius - dist
             result.contact_points = [closest_point]
-        
+
+        return result
+
+    @staticmethod
+    def cylinder_cylinder_collision(
+        cyl1_pos: np.ndarray, cyl1_r: float, cyl1_h: float,
+        cyl2_pos: np.ndarray, cyl2_r: float, cyl2_h: float,
+        margin: float = 0.0
+    ) -> CollisionResult:
+        """
+        Check collision between two vertical cylinders.
+
+        Args:
+            cyl1_pos: Center of cylinder 1 base [x, y, z]
+            cyl1_r: Radius of cylinder 1
+            cyl1_h: Height of cylinder 1
+            cyl2_pos: Center of cylinder 2 base [x, y, z]
+            cyl2_r: Radius of cylinder 2
+            cyl2_h: Height of cylinder 2
+            margin: Safety margin
+
+        Returns:
+            CollisionResult with collision information
+        """
+        result = CollisionResult(in_collision=False)
+
+        # Check Z-axis overlap
+        z1_min, z1_max = cyl1_pos[2], cyl1_pos[2] + cyl1_h
+        z2_min, z2_max = cyl2_pos[2], cyl2_pos[2] + cyl2_h
+
+        z_overlap = min(z1_max, z2_max) - max(z1_min, z2_min)
+
+
+        if z_overlap <= 0:
+            # No Z overlap - compute distance
+            z_gap = max(z1_min - z2_max, z2_min - z1_max)
+            xy_dist = np.linalg.norm(cyl1_pos[:2] - cyl2_pos[:2])
+            result.min_distance = np.sqrt(z_gap**2 + max(0, xy_dist - cyl1_r - cyl2_r)**2)
+            return result
+
+        # Z overlap exists - check XY distance
+        xy_dist = np.linalg.norm(cyl1_pos[:2] - cyl2_pos[:2])
+        radii_sum = cyl1_r + cyl2_r + margin
+
+        if xy_dist < radii_sum:
+            result.in_collision = True
+            result.penetration_depth = radii_sum - xy_dist
+            # Contact point at midpoint
+            z_contact = (max(z1_min, z2_min) + min(z1_max, z2_max)) / 2
+            if xy_dist > 1e-6:
+                xy_dir = (cyl2_pos[:2] - cyl1_pos[:2]) / xy_dist
+                contact_xy = cyl1_pos[:2] + xy_dir * cyl1_r
+            else:
+                contact_xy = cyl1_pos[:2]
+            result.contact_points = [np.array([contact_xy[0], contact_xy[1], z_contact])]
+        else:
+            result.min_distance = xy_dist - cyl1_r - cyl2_r
+
         return result
     
     # ==================== High-Level Collision Functions ====================
@@ -353,6 +410,20 @@ class CollisionChecker:
                 result = self.sphere_box_collision(
                     pos2, dims2[0], pos1, dims1 / 2, self.collision_margin
                 )
+        elif obj1.obj_type == CollisionObjectType.CYLINDER:
+            if obj2.obj_type == CollisionObjectType.SPHERE:
+                result = self.sphere_cylinder_collision(
+                    pos2, dims2[0], pos1, dims1[0], dims1[1], self.collision_margin
+                )
+            elif obj2.obj_type == CollisionObjectType.CYLINDER:
+                result = self.cylinder_cylinder_collision(
+                    pos1, dims1[0], dims1[1], pos2, dims2[0], dims2[1], self.collision_margin
+                )
+            else:
+                # Approximate as sphere
+                r1 = np.max(dims1) if len(dims1) > 0 else 0.1
+                r2 = np.max(dims2) if len(dims2) > 0 else 0.1
+                result = self.sphere_sphere_collision(pos1, r1, pos2, r2, self.collision_margin)
         else:
             # Default sphere approximation for other types
             r1 = np.max(dims1) if len(dims1) > 0 else 0.1
@@ -379,14 +450,14 @@ class CollisionChecker:
         for i, j in self.self_collision_pairs:
             link_i = self.robot_links[i]
             link_j = self.robot_links[j]
-            
+
             if link_i.name in link_transforms and link_j.name in link_transforms:
                 # Update link collision geometry positions
                 obj_i = link_i.collision_geometry
                 obj_j = link_j.collision_geometry
                 obj_i.pose[:3] = link_transforms[link_i.name][:3]
                 obj_j.pose[:3] = link_transforms[link_j.name][:3]
-                
+
                 result = self.check_collision(obj_i, obj_j)
                 if result.in_collision:
                     return result
@@ -567,30 +638,32 @@ if __name__ == "__main__":
     
     print(f"Added {len(checker.environment_objects)} environment objects")
     
-    # Create robot links (simplified Panda robot)
+    # Create robot links (GEN72 robot - example)
     links = [
-        create_robot_link("link0", CollisionObjectType.CYLINDER, np.array([0.05, 0.15]), 0),
-        create_robot_link("link1", CollisionObjectType.CYLINDER, np.array([0.05, 0.15]), 1),
-        create_robot_link("link2", CollisionObjectType.CYLINDER, np.array([0.05, 0.15]), 2),
-        create_robot_link("link3", CollisionObjectType.CYLINDER, np.array([0.04, 0.12]), 3),
-        create_robot_link("link4", CollisionObjectType.CYLINDER, np.array([0.04, 0.12]), 4),
-        create_robot_link("link5", CollisionObjectType.CYLINDER, np.array([0.03, 0.10]), 5),
-        create_robot_link("link6", CollisionObjectType.SPHERE, np.array([0.04]), 6),
+        create_robot_link("link0", CollisionObjectType.CYLINDER, np.array([0.040, 0.218]), 0),
+        create_robot_link("link1", CollisionObjectType.CYLINDER, np.array([0.032, 0.10]), 1),
+        create_robot_link("link2", CollisionObjectType.CYLINDER, np.array([0.030, 0.28]), 2),
+        create_robot_link("link3", CollisionObjectType.CYLINDER, np.array([0.028, 0.15]), 3),
+        create_robot_link("link4", CollisionObjectType.CYLINDER, np.array([0.025, 0.2525]), 4),
+        create_robot_link("link5", CollisionObjectType.CYLINDER, np.array([0.022, 0.12]), 5),
+        create_robot_link("link6", CollisionObjectType.CYLINDER, np.array([0.020, 0.08]), 6),
+        create_robot_link("link7", CollisionObjectType.SPHERE, np.array([0.025]), 7),
     ]
     checker.set_robot_links(links)
     
     print(f"Robot has {len(checker.robot_links)} links")
     print(f"Self-collision pairs: {len(checker.self_collision_pairs)}")
     
-    # Test collision checking with sample transforms
+    # Test collision checking with sample transforms (GEN72 safe config)
     link_transforms = {
-        "link0": np.array([0.0, 0.0, 0.1]),
-        "link1": np.array([0.0, 0.0, 0.25]),
-        "link2": np.array([0.0, 0.0, 0.4]),
-        "link3": np.array([0.1, 0.0, 0.5]),
-        "link4": np.array([0.2, 0.0, 0.55]),
-        "link5": np.array([0.3, 0.0, 0.55]),
-        "link6": np.array([0.4, 0.0, 0.55]),  # Near the obstacle!
+        "link0": np.array([0.0, 0.0, 0.0]),
+        "link1": np.array([0.0, 0.0, 0.218]),
+        "link2": np.array([0.0, 0.0, 0.218]),
+        "link3": np.array([0.0, -0.28, 0.218]),
+        "link4": np.array([0.04, -0.28, 0.218]),
+        "link5": np.array([0.021, -0.0275, 0.218]),
+        "link6": np.array([0.021, -0.0275, 0.218]),
+        "link7": np.array([0.1115, 0.0395, 0.218]),
     }
     
     # Check if state is valid

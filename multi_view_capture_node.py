@@ -32,11 +32,11 @@ class MultiViewCaptureNode:
     """Multi-view capture workflow controller"""
 
     def __init__(self):
-        # Capture targets (3 viewpoints) - larger movements for visibility
+        # Capture targets (3 viewpoints) - adjusted for reachability
         self.targets = [
-            CaptureTarget("view1", np.array([0.3, 0.3, 0.4, 3.14, 0.0, 0.0])),
-            CaptureTarget("view2", np.array([0.5, -0.3, 0.6, 3.14, 0.0, 1.57])),
-            CaptureTarget("view3", np.array([-0.3, 0.0, 0.3, 3.14, 0.0, 3.14])),
+            CaptureTarget("view1", np.array([0.4,  0.2, 0.5, 0.0, 0.0, 0.0])),
+            CaptureTarget("view2", np.array([0.4, -0.2, 0.5, 0.0, 0.0, 0.0])),
+            CaptureTarget("view3", np.array([0.3,  0.0, 0.6, 0.0, 0.0, 0.0])),
         ]
 
         self.current_target_idx = 0

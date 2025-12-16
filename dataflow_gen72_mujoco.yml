@@ -25,7 +25,7 @@ nodes:
       - joint_velocities
       - sensor_data
     env:
-      MODEL_NAME: "F:/2-DORA/2-arm/dora-moveit/dora-moveit/GEN72/urdf/gen_72_b_description/meshes/GEN72.urdf"
+      MODEL_NAME: "F:/2-DORA/2-arm/dora-moveit/dora-moveit/GEN72_base.xml"
 
   # ===========================================
   # Planning Scene 管理器（统一场景）

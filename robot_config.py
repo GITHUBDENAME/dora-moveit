@@ -66,28 +66,31 @@ class GEN72Config:
         {"xyz": [0.0905, 0.067, 0], "rpy": [1.5708, 0, 1.5708]},
     ]
 
-    # Collision geometry (simplified cylinders/spheres for each link)
-    # Format: (type, dimensions) where dimensions = [radius, height] for cylinder, [radius] for sphere
+    # Collision geometry (simplified spheres for each link)
+    # Format: (type, dimensions) where dimensions = [radius] for sphere
+    # Using sphere approximations to avoid orientation issues with cylinders
+    # Radii based on URDF inertia parameters and link geometry
     COLLISION_GEOMETRY = [
-        ("cylinder", [0.06, 0.218]),   # base_link
-        ("cylinder", [0.05, 0.10]),    # Link1
-        ("cylinder", [0.05, 0.28]),    # Link2
-        ("cylinder", [0.045, 0.15]),   # Link3
-        ("cylinder", [0.04, 0.2525]),  # Link4
-        ("cylinder", [0.035, 0.12]),   # Link5
-        ("cylinder", [0.03, 0.08]),    # Link6
-        ("sphere", [0.04]),            # Link7 (end effector)
+        ("sphere", [0.055]),  # base_link - mass=0.726kg
+        ("sphere", [0.045]),  # Link1 - mass=0.511kg
+        ("sphere", [0.045]),  # Link2 - mass=0.552kg
+        ("sphere", [0.045]),  # Link3 - mass=0.774kg
+        ("sphere", [0.04]),   # Link4 - mass=0.437kg
+        ("sphere", [0.035]),  # Link5 - mass=0.424kg
+        ("sphere", [0.03]),   # Link6 - mass=0.303kg
+        ("sphere", [0.025]),  # Link7 - mass=0.177kg, end effector
     ]
 
     # Safety parameters
-    COLLISION_MARGIN = 0.01  # 1cm safety margin
+    COLLISION_MARGIN = 0.015  # 1cm safety margin
     MAX_ACCELERATION = np.array([5.0, 5.0, 5.0, 5.0, 8.0, 8.0, 8.0])  # rad/s^2 (estimated)
 
-    # Default home configuration (all joints at 0)
-    HOME_CONFIG = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    # Default home configuration (safe, no self-collision)
+    # Joint2 raised to avoid link2-base collision, joint4 bent to keep arm compact
+    HOME_CONFIG = np.array([0.0, -0.5, 0.0, 0.0, 0.0, 0.5, 0.0])
 
     # Safe initial configuration (within limits, no self-collision)
-    SAFE_CONFIG = np.array([0.0, -0.5, 0.0, -1.5, 0.0, 1.0, 0.0])
+    SAFE_CONFIG = np.array([0.0, -0.5, 0.0, 0.0, 0.0, 0.5, 0.0])
 
     @staticmethod
     def get_joint_limits() -> Tuple[np.ndarray, np.ndarray]:

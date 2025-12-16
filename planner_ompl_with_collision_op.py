@@ -482,11 +482,29 @@ class PlannerOperator:
         self.plan_count = 0
         self.last_scene_version = -1  # Track scene version to avoid redundant updates
 
-        # Add default obstacles - ground lower to avoid robot base collision
+        # Set collision margin to 5mm (< 1cm)
+        self.planner.collision_checker.collision_margin = 0.01
+
+        # Add default obstacles
+        
         self.planner.add_obstacle(create_box("ground", np.array([0.0, 0.0, -0.05]), np.array([2.0, 2.0, 0.02])))
-        self.planner.add_obstacle(create_box("table", np.array([0.6, 0.0, 0.3]), np.array([0.4, 0.6, 0.02])))
+        '''
+        # Add pipe obstacles: 30cm diameter (0.15m radius), 2m height
+        self.planner.add_obstacle(create_cylinder("pipe1", np.array([0.1, 0.3, 0.0]), 0.05, 2.0))
+
+        # pipe2 is horizontal along X-axis (center at [0.6, -0.4, 0.8])
+        # Approximate with spheres since collision lib doesn't support rotated cylinders
+        num_spheres = 10
+        for i in range(num_spheres):
+            t = (i / (num_spheres - 1)) - 0.5  # -0.5 to 0.5
+            x = 0.6 + t * 2.0  # Extends 1m in each direction along X
+            self.planner.add_obstacle(create_sphere(f"pipe2_seg{i}", np.array([x, -0.4, 0.8]), 0.05))
+
+        self.planner.add_obstacle(create_cylinder("pipe3", np.array([-0.3, 0.3, -0.4]), 0.05, 2.0))
+        '''
 
         print("OMPL Planner operator initialized")
+        print(f"  Collision margin: {self.planner.collision_checker.collision_margin * 1000:.1f}mm")
         print(f"  Obstacles: {len(self.planner.collision_checker.environment_objects)}")
         
     def process_plan_request(self, request_data: dict) -> Tuple[List[np.ndarray], dict]:

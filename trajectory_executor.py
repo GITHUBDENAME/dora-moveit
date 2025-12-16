@@ -115,7 +115,7 @@ def main():
     from robot_config import GEN72Config
     executor.current_joints = GEN72Config.SAFE_CONFIG.copy()
     executor.last_command = GEN72Config.SAFE_CONFIG.copy()  # Initialize last_command
-    print(f"Initialized with safe config: {executor.current_joints[:3]}...")
+    print(f"Initialized with safe config: {executor.current_joints[:6]}...")
 
     for event in node:
         event_type = event["type"]

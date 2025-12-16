@@ -10,7 +10,7 @@ import mujoco.viewer
 
 # Create MuJoCo XML model
 xml = """
-<mujoco model="panda_scene">
+<mujoco model="gen72_scene">
   <option gravity="0 0 -9.81"/>
 
   <worldbody>
